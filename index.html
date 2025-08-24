@@ -62,19 +62,20 @@
 
   <div id="output">Scanned results will appear here...</div>
 
-  <!-- Html5Qrcode library -->
-  <script src="https://unpkg.com/html5-qrcode@2.3.10/minified/html5-qrcode.min.js"></script>
+  <!-- ✅ Load QR code library FIRST -->
+  <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
 
-  <!-- Firebase compat libraries -->
+  <!-- ✅ Firebase compat libraries -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
+  <!-- ✅ Your app logic -->
   <script>
     // Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyDnlTfbTFtFZzAEXNHaq2UqVLdTYVfrbW4",
       authDomain: "qr-attendance-79e24.firebaseapp.com",
-      databaseURL: "https://qr-attendance-79e24-default-rtdb.asia-southeast1.firebasedatabase.app",
+      databaseURL: "https://qr-attendance-79e24-default-rtdb.asia-southeast1.firebasedatabase.app/",
       projectId: "qr-attendance-79e24",
       storageBucket: "qr-attendance-79e24.appspot.com",
       messagingSenderId: "255067675399",
@@ -168,7 +169,7 @@
       document.getElementById("output").innerHTML = "<p>🔄 All data reset.</p>";
     }
 
-    // Auto-load masterlist & scanned IDs on page load
+    // Auto-load on startup
     window.onload = function() {
       loadMasterList();
       db.ref("scanned").once("value", snapshot => {
