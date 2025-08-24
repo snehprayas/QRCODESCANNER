@@ -3,15 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <title>QR Code Scanner</title>
+  <!-- PapaParse for CSV -->
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js"></script>
+  <!-- Firebase v8 (namespaced, no imports needed) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <!-- QR Scanner -->
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     #reader { width: 320px; height: 320px; margin-bottom: 10px; }
     button { margin: 5px; padding: 10px; }
     #output { margin-top: 20px; font-weight: bold; }
+    table { border-collapse: collapse; margin-top: 10px; }
+    td, th { border: 1px solid #ccc; padding: 5px 10px; }
   </style>
 </head>
 <body>
@@ -25,24 +30,20 @@
 
   <div id="output"></div>
 
-  <script type="module">
+  <script>
     // ---------------- FIREBASE ----------------
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-    import { getDatabase, ref, set, get, child, remove } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
-
-    const firebaseConfig = {
+    var firebaseConfig = {
       apiKey: "AIzaSyDnlTfbTFtFZzAEXNHaq2UqVLdTYVfrbW4",
       authDomain: "qr-attendance-79e24.firebaseapp.com",
       projectId: "qr-attendance-79e24",
-      storageBucket: "qr-attendance-79e24.firebasestorage.app",
+      storageBucket: "qr-attendance-79e24.appspot.com",
       messagingSenderId: "255067675399",
       appId: "1:255067675399:web:501f5b0348a38999ed03a2",
       measurementId: "G-3B1Q8B6DDD",
       databaseURL: "https://qr-attendance-79e24-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    firebase.initializeApp(firebaseConfig);
+    var db = firebase.database();
 
     // ---------------- MASTER LIST ----------------
     let masterList = [];
@@ -54,8 +55,18 @@
           header: true,
           complete: function(results) {
             masterList = results.data.map(row => ({
-              ID: row["Row Label"] ? row["Row Label"].trim() : "",
-              Name: row["NAME"] ? row["NAME"].trim() : ""
+              ID: row["Row Labels"] ? row["Row Labels"].trim() : "",
+              SLNO: row["SL NO"] || "",
+              Books: row["Sum of BOOKS TALLY"] || "",
+              Name: row["NAME"] || "",
+              Contact: row["CONTACT"] || "",
+              Age: row["AGE"] || "",
+              Gender: row["M/F"] || "",
+              Size: row["SIZE"] || "",
+              Paid: row["Paid"] || "",
+              Due: row["Due"] || "",
+              Total: row["Total"] || "",
+              Confirmation: row["Confirmation"] || ""
             })).filter(p => p.ID !== "");
             console.log("✅ Loaded master list:", masterList);
           }
@@ -73,8 +84,8 @@
       html5QrcodeScanner = new Html5Qrcode("reader");
       Html5Qrcode.getCameras().then(devices => {
         if (devices && devices.length) {
-          // Rear camera = last one
-          const cameraId = devices[devices.length - 1].id;
+          // Use rear camera if available
+          const cameraId = devices.length > 1 ? devices[devices.length - 1].id : devices[0].id;
           html5QrcodeScanner.start(
             cameraId,
             { fps: 10, qrbox: 250 },
@@ -86,7 +97,6 @@
 
     // ---------------- MARK SCANNED ----------------
     function markScanned(qrValue) {
-      // If QR is a link, take the last part after "/"
       let id = qrValue.includes("/") ? qrValue.split("/").pop().trim() : qrValue.trim();
 
       const person = masterList.find(p => p.ID === id);
@@ -95,19 +105,32 @@
         return;
       }
 
-      set(ref(db, "scanned/" + id), {
-        ID: person.ID,
-        Name: person.Name,
+      db.ref("scanned/" + id).set({
+        ...person,
         time: new Date().toLocaleString()
       });
 
-      document.getElementById("output").innerText =
-        "✅ Scanned: " + person.ID + " - " + person.Name;
+      // Show details
+      document.getElementById("output").innerHTML = `
+        <h3>✅ Scanned</h3>
+        <table>
+          <tr><th>ID</th><td>${person.ID}</td></tr>
+          <tr><th>Name</th><td>${person.Name}</td></tr>
+          <tr><th>Contact</th><td>${person.Contact}</td></tr>
+          <tr><th>Age</th><td>${person.Age}</td></tr>
+          <tr><th>Gender</th><td>${person.Gender}</td></tr>
+          <tr><th>Size</th><td>${person.Size}</td></tr>
+          <tr><th>Paid</th><td>${person.Paid}</td></tr>
+          <tr><th>Due</th><td>${person.Due}</td></tr>
+          <tr><th>Total</th><td>${person.Total}</td></tr>
+          <tr><th>Confirmation</th><td>${person.Confirmation}</td></tr>
+        </table>
+      `;
     }
 
     // ---------------- SHOW SCANNED ----------------
     function showScanned() {
-      get(child(ref(db), "scanned")).then(snapshot => {
+      db.ref("scanned").once("value").then(snapshot => {
         if (snapshot.exists()) {
           let data = snapshot.val();
           let list = Object.values(data)
@@ -122,7 +145,7 @@
 
     // ---------------- SHOW PENDING ----------------
     function showPending() {
-      get(child(ref(db), "scanned")).then(snapshot => {
+      db.ref("scanned").once("value").then(snapshot => {
         let scannedIDs = snapshot.exists() ? Object.keys(snapshot.val()) : [];
         let pending = masterList.filter(p => !scannedIDs.includes(p.ID));
         let list = pending.map(p => p.ID + " - " + p.Name).join("<br>");
@@ -133,7 +156,7 @@
     // ---------------- RESET ----------------
     function resetData() {
       if (confirm("Are you sure you want to clear all data?")) {
-        remove(ref(db, "scanned"));
+        db.ref("scanned").remove();
         document.getElementById("output").innerText = "All scan data cleared.";
       }
     }
