@@ -1,153 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>QR Attendance</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
-    :root {
-      --bg: #0b1220;
-      --card: #121a2a;
-      --muted: #9fb0d3;
-      --accent: #4cc9f0;
-      --good: #39d353;
-      --warn: #f0b429;
-      --bad: #ff6b6b;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: radial-gradient(1200px 800px at 20% -10%, #1a2750 0%, transparent 70%),
-                  radial-gradient(900px 900px at 100% 0%, rgba(76,201,240,0.15) 0%, transparent 60%),
-                  var(--bg);
-      color: white;
-    }
-    #reader { width: 100%; max-width: 400px; margin: 20px auto; }
-    #controls { margin: 20px; text-align: center; }
-    button {
-      background: var(--accent);
-      border: none;
-      color: white;
-      padding: 10px 20px;
-      margin: 5px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    #output { margin: 20px; padding: 10px; background: var(--card); border-radius: 10px; }
+    body { font-family: Arial, sans-serif; background: #0b1220; color: white; text-align: center; }
+    #reader { width: 350px; margin: auto; }
+    button { margin: 10px; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+    .good { background: #39d353; color: black; }
+    .warn { background: #f0b429; }
+    .bad { background: #ff6b6b; }
   </style>
-
-  <!-- ✅ Load QR scanner library before our own JS -->
-  <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
 </head>
 <body>
-  <h2 style="text-align:center;">📷 QR Attendance System</h2>
-
+  <h2>📷 QR Attendance Scanner</h2>
   <div id="reader"></div>
-
-  <div id="controls">
+  <div>
     <button onclick="startScanner()">Start Scanner</button>
     <button onclick="stopScanner()">Stop Scanner</button>
+    <button onclick="flipCamera()">Flip Camera</button>
     <button onclick="showScanned()">Show Scanned</button>
     <button onclick="showPending()">Show Pending</button>
-    <button onclick="resetData()">Reset</button>
   </div>
+  <pre id="output"></pre>
 
-  <div id="output"><b>Status:</b> Waiting...</div>
-
-  <!-- ✅ Our custom JS at the very end -->
   <script>
-    const SHEET_URL = "https://script.google.com/macros/s/AKfycbymlcxV4iO-e0aQyG35tYSqWkp4sED-OTms6u1gHX7YIaKAmMOVIWu3QZdC9Bo3yu4/exec";
-
+    const SCRIPT_URL = "YOUR_SCRIPT_LINK_HERE"; // replace with your Apps Script WebApp link
     let html5QrCode;
-    let masterList = {};
-    let scannedIDs = JSON.parse(localStorage.getItem("scannedIDs") || "[]");
+    let currentCameraId = null;
+    let useBackCamera = true;
+    let masterlist = {};
+    let scanned = new Set();
 
-    // Load master list from Google Sheets
-    fetch(SHEET_URL)
-      .then(res => res.json())
-      .then(data => {
-        masterList = data;
-        console.log("✅ Master list loaded:", masterList);
-      })
-      .catch(err => console.error("❌ Error loading sheet:", err));
+    // Load masterlist from Google Sheets
+    async function loadMasterlist() {
+      const res = await fetch(SCRIPT_URL);
+      masterlist = await res.json();
+      console.log("✅ Loaded master list:", masterlist);
+    }
 
-    function startScanner() {
-      if (!Html5Qrcode) {
-        alert("Scanner library failed to load. Check html5-qrcode script.");
-        return;
-      }
-
+    // Start scanner
+    async function startScanner() {
+      if (html5QrCode) await html5QrCode.stop();
       html5QrCode = new Html5Qrcode("reader");
-      Html5Qrcode.getCameras().then(devices => {
-        if (devices.length) {
-          let camId = devices.length > 1 ? devices[1].id : devices[0].id;
-          html5QrCode.start(
-            camId,
-            { fps: 10, qrbox: 250 },
-            onScanSuccess
-          );
-          document.getElementById("output").innerHTML = "<b>Status:</b> Scanner started ✅";
-        }
-      }).catch(err => {
-        console.error("Camera error:", err);
-        document.getElementById("output").innerHTML = "❌ Unable to access camera";
-      });
+
+      const devices = await Html5Qrcode.getCameras();
+      if (devices && devices.length) {
+        currentCameraId = useBackCamera && devices[1] ? devices[1].id : devices[0].id;
+        html5QrCode.start(
+          currentCameraId,
+          { fps: 10, qrbox: 250 },
+          qrCodeMessage => handleScan(qrCodeMessage),
+          errorMessage => {}
+        );
+      }
     }
 
-    function stopScanner() {
+    // Stop scanner
+    async function stopScanner() {
       if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-          html5QrCode.clear();
-          document.getElementById("output").innerHTML = "<b>Status:</b> Scanner stopped ⛔";
+        await html5QrCode.stop();
+        document.getElementById("output").textContent += "\n⏹️ Scanner stopped";
+      }
+    }
+
+    // Flip camera
+    function flipCamera() {
+      useBackCamera = !useBackCamera;
+      startScanner();
+    }
+
+    // Handle scanned QR
+    async function handleScan(id) {
+      if (scanned.has(id)) return; // Already scanned
+      scanned.add(id);
+
+      if (masterlist[id]) {
+        document.getElementById("output").textContent = `✅ ${id} - ${masterlist[id].NAME} marked present`;
+        // Update Google Sheet
+        fetch(SCRIPT_URL, {
+          method: "POST",
+          body: new URLSearchParams({ id: id })
         });
-      }
-    }
-
-    function onScanSuccess(decodedText) {
-      if (scannedIDs.includes(decodedText)) {
-        document.getElementById("output").innerHTML =
-          `⚠️ Already scanned: ${decodedText}`;
-        return;
-      }
-
-      scannedIDs.push(decodedText);
-      localStorage.setItem("scannedIDs", JSON.stringify(scannedIDs));
-
-      if (masterList[decodedText]) {
-        let person = masterList[decodedText];
-        document.getElementById("output").innerHTML =
-          `✅ Scanned: <b>${decodedText}</b><br>
-           Name: ${person.NAME}<br>
-           Contact: ${person.CONTACT}<br>
-           Age: ${person.AGE}<br>
-           Gender: ${person.GENDER}<br>
-           Size: ${person.SIZE}`;
       } else {
-        document.getElementById("output").innerHTML =
-          `❌ ID not in masterlist: ${decodedText}`;
+        document.getElementById("output").textContent = `❌ ID ${id} not in masterlist`;
       }
     }
 
+    // Show scanned IDs
     function showScanned() {
-      document.getElementById("output").innerHTML =
-        "<b>Scanned IDs:</b><br>" + scannedIDs.join("<br>");
+      document.getElementById("output").textContent = "✅ Scanned:\n" + [...scanned].join("\n");
     }
 
+    // Show pending IDs
     function showPending() {
-      let pending = Object.keys(masterList).filter(id => !scannedIDs.includes(id));
-      document.getElementById("output").innerHTML =
-        "<b>Pending IDs:</b><br>" + pending.join("<br>");
+      const pending = Object.keys(masterlist).filter(id => !scanned.has(id));
+      document.getElementById("output").textContent = "⏳ Pending:\n" + pending.join("\n");
     }
 
-    function resetData() {
-      scannedIDs = [];
-      localStorage.removeItem("scannedIDs");
-      document.getElementById("output").innerHTML =
-        "<b>Status:</b> Data reset 🔄";
-    }
+    // Load masterlist at startup
+    loadMasterlist();
   </script>
 </body>
 </html>
+
