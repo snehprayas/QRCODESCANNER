@@ -5,9 +5,6 @@
   <title>QR Attendance</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- ✅ Load the QR scanner library BEFORE your script -->
- <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
-
   <style>
     :root {
       --bg: #0b1220;
@@ -25,359 +22,132 @@
       background: radial-gradient(1200px 800px at 20% -10%, #1a2750 0%, transparent 70%),
                   radial-gradient(900px 900px at 100% 0%, rgba(76,201,240,0.15) 0%, transparent 60%),
                   var(--bg);
-      color: #e9f0ff;
-      min-height: 100vh;
+      color: white;
     }
-    header {
-      text-align: center;
-      padding: 22px 12px 8px;
-    }
-    header h1 { margin: 0 0 6px; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
-    header .sub { color: var(--muted); font-size: 13px; }
-
-    .container {
-      max-width: 940px;
-      margin: 10px auto 96px;
-      padding: 0 12px 24px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 14px;
-    }
-    @media (min-width: 980px) {
-      .grid { grid-template-columns: 360px 1fr; align-items: start; }
-    }
-
-    .card {
-      background: linear-gradient(180deg, rgba(76,201,240,0.09), transparent),
-                  var(--card);
-      border: 1px solid rgba(76,201,240,0.18);
-      border-radius: 14px;
-      padding: 14px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-    }
-    .card h2 { font-size: 16px; margin: 0 0 10px; color: #d9e6ff; }
-
-    #reader {
-      width: 100%;
-      max-width: 480px;
-      margin: 8px auto 0;
-      aspect-ratio: 3/4;
-      border-radius: 12px;
-      overflow: hidden;
-      background: #000;
-    }
-
-    .controls {
-      position: sticky;
-      bottom: 0;
-      z-index: 3;
-      background: linear-gradient(180deg, rgba(11,18,32,0.2), var(--bg));
-      padding: 10px 12px;
-      border-top: 1px solid rgba(76,201,240,0.18);
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 8px;
-    }
-    .btn {
-      appearance: none;
-      border: 1px solid rgba(76,201,240,0.35);
-      background: linear-gradient(180deg, rgba(76,201,240,0.12), rgba(76,201,240,0.03));
-      color: #e9f0ff;
-      padding: 10px 8px;
-      border-radius: 10px;
-      font-weight: 600;
-      font-size: 13px;
+    #reader { width: 100%; max-width: 400px; margin: 20px auto; }
+    #controls { margin: 20px; text-align: center; }
+    button {
+      background: var(--accent);
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      margin: 5px;
+      border-radius: 8px;
       cursor: pointer;
-      transition: transform .05s ease, background .2s ease, border-color .2s ease;
+      font-size: 16px;
     }
-    .btn:hover { transform: translateY(-1px); }
-    .btn:active { transform: translateY(0px); }
-    .btn[disabled] { opacity: .55; pointer-events: none; }
-    .btn.good { border-color: rgba(57,211,83,.55); background: linear-gradient(180deg, rgba(57,211,83,.18), rgba(57,211,83,.07)); }
-    .btn.warn { border-color: rgba(240,180,41,.55); background: linear-gradient(180deg, rgba(240,180,41,.18), rgba(240,180,41,.07)); }
-    .btn.bad  { border-color: rgba(255,107,107,.55); background: linear-gradient(180deg, rgba(255,107,107,.18), rgba(255,107,107,.07)); }
-
-    .status {
-      margin-top: 8px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .pill {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 10px; border-radius: 999px;
-      border: 1px solid rgba(76,201,240,.33);
-      background: rgba(76,201,240,.08);
-      margin: 0 6px 8px 0;
-      font-size: 12px; color: #d9e6ff;
-    }
-
-    .details {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-      font-size: 14px;
-    }
-    .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; }
-    .k { color: #a9bde6; }
-    .v { color: #eaf2ff; font-weight: 600; }
-
-    .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin-top: 8px; }
-    .chip { border: 1px solid rgba(76,201,240,.22); border-radius: 12px; padding: 8px 10px; font-size: 13px; background: rgba(76,201,240,.05); }
-
-    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
-    .hidden { display: none !important; }
+    #output { margin: 20px; padding: 10px; background: var(--card); border-radius: 10px; }
   </style>
+
+  <!-- ✅ Load QR scanner library before our own JS -->
+  <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
 </head>
 <body>
-  <header>
-    <h1>QR Attendance</h1>
-    <div class="sub">Rear-camera QR scanning + live masterlist from Google Sheets</div>
-  </header>
+  <h2 style="text-align:center;">📷 QR Attendance System</h2>
 
-  <div class="container">
-    <div class="grid">
-      <!-- LEFT: Scanner -->
-      <section class="card">
-        <h2>Scanner</h2>
-        <div id="reader"></div>
-        <div class="status" id="camStatus">Camera: idle</div>
-        <div class="hint">If rear camera doesn’t start, tap “Stop”, then “Start” again.</div>
-      </section>
+  <div id="reader"></div>
 
-      <!-- RIGHT: Info / Results -->
-      <section class="card">
-        <h2>Current Scan</h2>
-        <div id="scanPills">
-          <span class="pill" id="pillTotal">Total: 0</span>
-          <span class="pill" id="pillScanned">Scanned: 0</span>
-          <span class="pill" id="pillPending">Pending: 0</span>
-        </div>
-        <div id="status" class="status">Loading masterlist…</div>
-
-        <div id="result" class="hidden">
-          <div class="row"><span class="k">ID</span><span class="v" id="r_id">—</span></div>
-          <div class="row"><span class="k">Name</span><span class="v" id="r_name">—</span></div>
-          <div class="details" style="margin-top:8px">
-            <div class="row"><span class="k">Contact</span><span class="v" id="r_contact">—</span></div>
-            <div class="row"><span class="k">Age</span><span class="v" id="r_age">—</span></div>
-            <div class="row"><span class="k">Gender</span><span class="v" id="r_gender">—</span></div>
-            <div class="row"><span class="k">Size</span><span class="v" id="r_size">—</span></div>
-            <div class="row"><span class="k">Paid</span><span class="v" id="r_paid">—</span></div>
-            <div class="row"><span class="k">Due</span><span class="v" id="r_due">—</span></div>
-            <div class="row"><span class="k">Total</span><span class="v" id="r_total">—</span></div>
-            <div class="row"><span class="k">Confirm</span><span class="v" id="r_conf">—</span></div>
-          </div>
-        </div>
-
-        <div id="listWrap" class="hidden">
-          <div id="listTitle" class="status"></div>
-          <div id="list" class="list"></div>
-        </div>
-      </section>
-    </div>
+  <div id="controls">
+    <button onclick="startScanner()">Start Scanner</button>
+    <button onclick="stopScanner()">Stop Scanner</button>
+    <button onclick="showScanned()">Show Scanned</button>
+    <button onclick="showPending()">Show Pending</button>
+    <button onclick="resetData()">Reset</button>
   </div>
 
-  <!-- Sticky Controls (always visible on mobile) -->
-  <div class="controls">
-    <button id="btnStart" class="btn good" onclick="startScanner()">Start</button>
-    <button id="btnStop"  class="btn bad"  onclick="stopScanner()" disabled>Stop</button>
-    <button class="btn" onclick="showScanned()">Show Scanned</button>
-    <button class="btn" onclick="showPending()">Show Pending</button>
-    <button class="btn warn" onclick="resetData()">Reset</button>
-  </div>
+  <div id="output"><b>Status:</b> Waiting...</div>
 
+  <!-- ✅ Our custom JS at the very end -->
   <script>
-    // 🔗 Paste YOUR Apps Script Web App URL here:
-    const SHEET_API = "https://script.google.com/macros/s/AKfycbymlcxV4iO-e0aQyG35tYSqWkp4sED-OTms6u1gHX7YIaKAmMOVIWu3QZdC9Bo3yu4/exec";
-    // Example (replace!): "https://script.google.com/macros/s/AKfycb.../exec"
+    const SHEET_URL = "https://script.google.com/macros/s/AKfycbymlcxV4iO-e0aQyG35tYSqWkp4sED-OTms6u1gHX7YIaKAmMOVIWu3QZdC9Bo3yu4/exec";
 
-    // --- State ---
-    let master = {};                     // ID -> row object
-    let scannedIDs = new Set();          // IDs scanned on this device
-    let html5QrCode = null;
-    let running = false;
+    let html5QrCode;
+    let masterList = {};
+    let scannedIDs = JSON.parse(localStorage.getItem("scannedIDs") || "[]");
 
-    // --- Helpers ---
-    const $ = (id) => document.getElementById(id);
-    function setCounts() {
-      const total = Object.keys(master).length;
-      const scannedCount = scannedIDs.size;
-      const pending = total - scannedCount;
-      $("pillTotal").textContent = "Total: " + total;
-      $("pillScanned").textContent = "Scanned: " + scannedCount;
-      $("pillPending").textContent = "Pending: " + pending;
-    }
-    function setButtons() {
-      $("btnStart").disabled = running;
-      $("btnStop").disabled  = !running;
-    }
-    function showStatus(msg) { $("status").textContent = msg; }
-    function showResultCard(row, id) {
-      $("result").classList.remove("hidden");
-      $("listWrap").classList.add("hidden");
-      $("r_id").textContent = id || "—";
-      $("r_name").textContent = row?.NAME ?? "—";
-      $("r_contact").textContent = row?.CONTACT ?? "—";
-      $("r_age").textContent = row?.AGE ?? "—";
-      $("r_gender").textContent = row?.GENDER ?? "—";
-      $("r_size").textContent = row?.SIZE ?? "—";
-      $("r_paid").textContent = row?.Paid ?? "—";
-      $("r_due").textContent = row?.Due ?? "—";
-      $("r_total").textContent = row?.Total ?? "—";
-      $("r_conf").textContent = row?.Confirmation ?? "—";
-    }
-    function showList(title, items) {
-      $("result").classList.add("hidden");
-      $("listWrap").classList.remove("hidden");
-      $("listTitle").textContent = title + " (" + items.length + ")";
-      $("list").innerHTML = items.map(txt => `<div class="chip">${txt}</div>`).join("");
-    }
-    function parseId(raw) {
-      if (!raw) return "";
-      const s = String(raw).trim();
-      // Try to extract patterns like ABC123 from any text/URL
-      const m = s.toUpperCase().match(/[A-Z]{2,}\d{2,}/);
-      return (m ? m[0] : s.toUpperCase());
-    }
+    // Load master list from Google Sheets
+    fetch(SHEET_URL)
+      .then(res => res.json())
+      .then(data => {
+        masterList = data;
+        console.log("✅ Master list loaded:", masterList);
+      })
+      .catch(err => console.error("❌ Error loading sheet:", err));
 
-    // --- Load masterlist from Google Apps Script ---
-    async function loadMaster() {
-      try {
-        showStatus("Loading masterlist…");
-        const res = await fetch(SHEET_API, { cache: "no-store" });
-        const json = await res.json();
-        // Expecting: { "ALI363": { ID:"ALI363", NAME:"...", ... }, ... }
-        master = json || {};
-        const total = Object.keys(master).length;
-        showStatus(`✅ Masterlist loaded (${total} records). Ready to scan.`);
-        setCounts();
-      } catch (err) {
-        console.error("Master load error:", err);
-        showStatus("❌ Failed to load masterlist. Check your Apps Script URL & sheet name.");
-      }
-    }
-
-    // --- Scanner controls ---
-    async function startScanner() {
-      try {
-        if (running) return;
-        if (typeof Html5Qrcode === "undefined") {
-          alert("Scanner library failed to load. Check the script tag for html5-qrcode.");
-          return;
-        }
-        $("camStatus").textContent = "Camera: initializing…";
-        html5QrCode = new Html5Qrcode("reader");
-        const devices = await Html5Qrcode.getCameras();
-        if (!devices || !devices.length) {
-          $("camStatus").textContent = "Camera: not found";
-          return;
-        }
-        // Prefer a back/rear camera if labels are available
-        let camId = devices[0].id;
-        const back = devices.find(d => /back|rear|environment/i.test(d.label));
-        if (back) camId = back.id;
-        else if (devices.length > 1) camId = devices[devices.length - 1].id; // last device is often rear
-
-        await html5QrCode.start(
-          camId,
-          { fps: 10, qrbox: { width: 260, height: 260 } },
-          (decodedText) => onScan(decodedText),
-          (err) => { /* ignore scan errors/noise */ }
-        );
-        running = true;
-        setButtons();
-        $("camStatus").textContent = "Camera: running";
-      } catch (err) {
-        console.error("Start error:", err);
-        $("camStatus").textContent = "Camera: failed to start";
-        running = false;
-        setButtons();
-      }
-    }
-
-    async function stopScanner() {
-      try {
-        if (html5QrCode) {
-          await html5QrCode.stop();
-          await html5QrCode.clear();
-        }
-      } catch (e) {
-        // ignore
-      } finally {
-        html5QrCode = null;
-        running = false;
-        setButtons();
-        $("camStatus").textContent = "Camera: stopped";
-      }
-    }
-
-    // --- On scan ---
-    function onScan(text) {
-      const id = parseId(text);
-      if (!id) return;
-
-      if (!master[id]) {
-        showStatus(`❌ ID not in masterlist: ${id}`);
-        showResultCard(null, id);
+    function startScanner() {
+      if (!Html5Qrcode) {
+        alert("Scanner library failed to load. Check html5-qrcode script.");
         return;
       }
 
-      if (!scannedIDs.has(id)) {
-        scannedIDs.add(id);
-        persistScanned();
-        setCounts();
-      }
-
-      showStatus(`✅ Scanned: ${id}`);
-      showResultCard(master[id], id);
+      html5QrCode = new Html5Qrcode("reader");
+      Html5Qrcode.getCameras().then(devices => {
+        if (devices.length) {
+          let camId = devices.length > 1 ? devices[1].id : devices[0].id;
+          html5QrCode.start(
+            camId,
+            { fps: 10, qrbox: 250 },
+            onScanSuccess
+          );
+          document.getElementById("output").innerHTML = "<b>Status:</b> Scanner started ✅";
+        }
+      }).catch(err => {
+        console.error("Camera error:", err);
+        document.getElementById("output").innerHTML = "❌ Unable to access camera";
+      });
     }
 
-    // --- Views ---
+    function stopScanner() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+          html5QrCode.clear();
+          document.getElementById("output").innerHTML = "<b>Status:</b> Scanner stopped ⛔";
+        });
+      }
+    }
+
+    function onScanSuccess(decodedText) {
+      if (scannedIDs.includes(decodedText)) {
+        document.getElementById("output").innerHTML =
+          `⚠️ Already scanned: ${decodedText}`;
+        return;
+      }
+
+      scannedIDs.push(decodedText);
+      localStorage.setItem("scannedIDs", JSON.stringify(scannedIDs));
+
+      if (masterList[decodedText]) {
+        let person = masterList[decodedText];
+        document.getElementById("output").innerHTML =
+          `✅ Scanned: <b>${decodedText}</b><br>
+           Name: ${person.NAME}<br>
+           Contact: ${person.CONTACT}<br>
+           Age: ${person.AGE}<br>
+           Gender: ${person.GENDER}<br>
+           Size: ${person.SIZE}`;
+      } else {
+        document.getElementById("output").innerHTML =
+          `❌ ID not in masterlist: ${decodedText}`;
+      }
+    }
+
     function showScanned() {
-      const items = Array.from(scannedIDs).map(id => `${id} — ${master[id]?.NAME ?? ""}`.trim());
-      showList("Scanned", items);
+      document.getElementById("output").innerHTML =
+        "<b>Scanned IDs:</b><br>" + scannedIDs.join("<br>");
     }
+
     function showPending() {
-      const items = Object.keys(master)
-        .filter(id => !scannedIDs.has(id))
-        .map(id => `${id} — ${master[id]?.NAME ?? ""}`.trim());
-      showList("Pending", items);
+      let pending = Object.keys(masterList).filter(id => !scannedIDs.includes(id));
+      document.getElementById("output").innerHTML =
+        "<b>Pending IDs:</b><br>" + pending.join("<br>");
     }
 
-    // --- Reset ---
     function resetData() {
-      scannedIDs.clear();
-      persistScanned();
-      setCounts();
-      showStatus("🔄 Local scanned list cleared.");
-      $("result").classList.add("hidden");
-      $("listWrap").classList.add("hidden");
+      scannedIDs = [];
+      localStorage.removeItem("scannedIDs");
+      document.getElementById("output").innerHTML =
+        "<b>Status:</b> Data reset 🔄";
     }
-
-    // --- Persistence (per-device) ---
-    function persistScanned() {
-      try {
-        localStorage.setItem("scanned_ids_v1", JSON.stringify(Array.from(scannedIDs)));
-      } catch (_) {}
-    }
-    function restoreScanned() {
-      try {
-        const raw = localStorage.getItem("scanned_ids_v1");
-        if (raw) scannedIDs = new Set(JSON.parse(raw));
-      } catch (_) {
-        scannedIDs = new Set();
-      }
-    }
-
-    // --- Startup ---
-    document.addEventListener("DOMContentLoaded", async () => {
-      restoreScanned();
-      setCounts();
-      setButtons();
-      await loadMaster();
-    });
   </script>
 </body>
 </html>
