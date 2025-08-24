@@ -8,7 +8,7 @@
 </head>
 <body>
   <h1>QR Code Scanner</h1>
-  <div id="reader" style="width:300px; height:300px;"></div>
+  <div id="reader" style="width:350px; height:350px; border:1px solid black;"></div>
 
   <button onclick="startScanner()">Start Scanner</button>
   <button onclick="showScanned()">Show Scanned</button>
@@ -20,7 +20,7 @@
   <!-- Firebase + App Code -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-    import { getDatabase, ref, set, remove, get, child } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+    import { getDatabase, ref, set, remove, get } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
 
     // ✅ Your Firebase config
     const firebaseConfig = {
@@ -52,7 +52,7 @@
       });
     }
 
-    // ✅ Start QR Scanner
+    // ✅ Start QR Scanner (rear camera preferred)
     async function startScanner() {
       if (html5QrCode) {
         await html5QrCode.stop();
@@ -62,15 +62,29 @@
       try {
         const devices = await Html5Qrcode.getCameras();
         if (devices && devices.length) {
-          const cameraId = devices[0].id; // first camera
+          // Prefer rear camera if available
+          let cameraId;
+          const rearCam = devices.find(d => 
+            d.label.toLowerCase().includes("back") || 
+            d.label.toLowerCase().includes("rear") || 
+            d.label.toLowerCase().includes("environment")
+          );
+          if (rearCam) {
+            cameraId = rearCam.id;
+          } else {
+            cameraId = devices[0].id; // fallback to first camera
+          }
+
           await html5QrCode.start(
             cameraId,
-            { fps: 10, qrbox: { width: 250, height: 250 } },
+            { fps: 15, qrbox: { width: 300, height: 300 } },
             (decodedText) => {
               console.log("Scanned:", decodedText);
               markScanned(decodedText.trim());
             },
-            (errorMessage) => {}
+            (errorMessage) => {
+              // Ignore errors
+            }
           );
         } else {
           alert("No camera found!");
