@@ -12,7 +12,7 @@
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    .container { display: flex; gap: 20px; }
+    .container { display: flex; gap: 20px; align-items: flex-start; }
     #reader { width: 320px; height: 320px; border: 1px solid #ccc; }
     .controls { display: flex; flex-direction: column; gap: 10px; }
     button { padding: 10px; cursor: pointer; font-size: 14px; }
@@ -84,7 +84,7 @@
     let html5QrcodeScanner;
 
     function startScanner() {
-      const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+      const qrCodeSuccessCallback = (decodedText) => {
         markScanned(decodedText);
       };
 
@@ -126,8 +126,10 @@
           let data = Object.values(snapshot.val());
           renderTable(data, "📋 Scanned List");
         } else {
-          document.getElementById("output").innerText = "No scans yet.";
+          document.getElementById("output").innerHTML = "<h3>📋 Scanned List</h3>No scans yet.";
         }
+      }).catch(err => {
+        console.error("Error fetching scanned:", err);
       });
     }
 
@@ -137,6 +139,8 @@
         let scannedIDs = snapshot.exists() ? Object.keys(snapshot.val()) : [];
         let pending = masterList.filter(p => !scannedIDs.includes(p.ID));
         renderTable(pending, "⏳ Pending List");
+      }).catch(err => {
+        console.error("Error fetching pending:", err);
       });
     }
 
