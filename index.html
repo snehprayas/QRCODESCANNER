@@ -1,59 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>QR Attendance (Realtime)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
+  <meta charset="UTF-8">
+  <title>QR Attendance System</title>
   <style>
-    :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--ok:#10b981;--warn:#f59e0b;--bad:#ef4444;--text:#e5e7eb;}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu,Arial,sans-serif;background:var(--bg);color:var(--text)}
-    header{padding:16px 20px;border-bottom:1px solid #1f2937;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
-    .title{font-weight:700;font-size:18px}
-    .stats{display:flex;gap:10px;flex-wrap:wrap}
-    .pill{padding:6px 10px;border-radius:999px;background:#1f2937;font-size:13px}
-    .pill.ok{background:#064e3b}.pill.ok b{color:#a7f3d0}
-    .pill.warn{background:#4a3002}.pill.warn b{color:#fde68a}
-    main{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px}
-    @media (max-width: 960px){main{grid-template-columns:1fr}}
-    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:16px}
-    .card h2{margin:0 0 12px 0;font-size:16px}
-    #reader{width:100%;max-width:420px;margin:0 auto}
-    .controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px}
-    button{background:#1f2937;border:1px solid #374151;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer}
-    button.primary{background:#0b3b2e;border-color:#14532d}
-    button.danger{background:#3b0b0b;border-color:#7f1d1d}
-    .status{min-height:24px;margin-top:8px;font-size:14px;color:var(--muted)}
-    .lists{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    @media (max-width: 960px){.lists{grid-template-columns:1fr}}
-    .list{max-height:420px;overflow:auto;border-radius:12px;border:1px solid #1f2937}
-    table{width:100%;border-collapse:collapse;font-size:14px}
-    thead{position:sticky;top:0;background:#0b1220}
-    th,td{padding:8px 10px;border-bottom:1px solid #1f2937;text-align:left;white-space:nowrap}
-    .muted{color:var(--muted)}
-    .tag{font-size:12px;padding:2px 6px;border-radius:999px;background:#1f2937;border:1px solid #374151}
-    .ok{color:#a7f3d0}
-    .warn{color:#fde68a}
-    .bad{color:#fecaca}
-    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    input[type="text"]{width:100%;padding:10px;border-radius:10px;border:1px solid #374151;background:#0b1220;color:var(--text)}
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    #reader { width: 300px; margin: auto; }
+    button { margin: 10px; padding: 10px 20px; }
+    ul { text-align: left; display: inline-block; }
   </style>
 
   <!-- QR Scanner -->
   <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
   <!-- CSV Parser -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-Gk1P3z2g0y7QnZQzT8N8A0aR60WkW/6k8Ue3u0F6b2UO0N2N2kqSTJ2v7T3sQHc2k4Wb7u1rxm2dVnqF3m+3ow==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
-  <!-- Firebase v12 (modular) -->
+  <!-- Firebase v12 -->
   <script type="module">
-    /*************** 1) Firebase setup ****************/
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-    import {
-      getDatabase, ref, set, remove, onValue, get, child
-    } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+    import { getDatabase, ref, set, remove, get, child } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
 
-    // 👉 Replace with your config (you provided these)
+    // 🔹 Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyDnlTfbTFtFZzAEXNHaq2UqVLdTYVfrbW4",
       authDomain: "qr-attendance-79e24.firebaseapp.com",
@@ -64,205 +31,107 @@
       appId: "1:255067675399:web:501f5b0348a38999ed03a2",
       measurementId: "G-3B1Q8B6DDD"
     };
+
     const app = initializeApp(firebaseConfig);
-    const db  = getDatabase(app);
+    const db = getDatabase(app);
 
-    /*************** 2) State & helpers ****************/
-    let master = [];       // [{ID,Name,Amount}]
-    let attendance = {};   // { ID: {scanned:true,time:"..."} }
+    let masterList = []; // Loaded from CSV
 
-    const $ = (sel)=>document.querySelector(sel);
-    const fmt = (s)=> (s??"").toString().trim();
-    const norm = (s)=> fmt(s).toUpperCase(); // normalize IDs (trim, uppercase)
-
-    function setStatus(msg, cls=""){ const el=$(".status"); el.textContent=msg; el.className="status "+cls; }
-
-    /*************** 3) Load masterlist.csv ****************/
-    function loadMasterCSV(){
+    // ✅ Load master list from CSV
+    function loadCSV() {
       Papa.parse("masterlist.csv", {
-        download:true,
-        header:true,
-        skipEmptyLines:true,
-        complete: (res)=>{
-          master = res.data
-            .map(r=>({ ID:norm(r.ID), Name:fmt(r.Name), Amount:fmt(r.Amount) }))
-            .filter(r=>r.ID);
-          setStatus(`Master list loaded: ${master.length} records.`, "ok");
-          renderAll();
-        },
-        error: ()=>{
-          setStatus("Couldn't load masterlist.csv — make sure it's in the same folder as index.html", "bad");
+        download: true,
+        header: true,
+        complete: function(results) {
+          masterList = results.data.filter(row => row.ID);
+          console.log("Loaded master list:", masterList);
         }
       });
     }
 
-    /*************** 4) Realtime attendance listener ****************/
-    function watchAttendance(){
-      const attRef = ref(db, "attendance");
-      onValue(attRef, (snap)=>{
-        attendance = snap.val() || {};
-        renderAll(); // live update lists and counts
+    // ✅ QR Scanner
+    function startScanner() {
+      const html5QrCode = new Html5Qrcode("reader");
+      Html5Qrcode.getCameras().then(cameras => {
+        if (cameras.length) {
+          html5QrCode.start(
+            cameras[0].id,
+            { fps: 10, qrbox: 250 },
+            (decodedText) => {
+              markScanned(decodedText.trim());
+            }
+          );
+        }
       });
     }
 
-    /*************** 5) QR scanner ****************/
-    let qr; let usingCamId = null;
+    // ✅ Save scan in Firebase
+    function markScanned(id) {
+      const personRef = ref(db, "attendance/" + id);
+      set(personRef, {
+        scanned: true,
+        time: new Date().toISOString()
+      });
+      showScanned();
+    }
 
-    async function startScanner(){
-      try{
-        if(!qr) qr = new Html5Qrcode("reader");
-        const cams = await Html5Qrcode.getCameras();
-        if(!cams.length) return setStatus("No camera found.", "bad");
-        usingCamId = cams[0].id; // by default back camera (first)
-        await qr.start(usingCamId, { fps:10, qrbox:250 }, onScan);
-        setStatus("Scanner started. Point camera at a QR.");
-      }catch(e){
-        setStatus("Failed to start scanner: "+e, "bad");
+    // ✅ Reset all data
+    function resetData() {
+      remove(ref(db, "attendance"));
+      document.getElementById("output").innerHTML = "<p>All data cleared.</p>";
+    }
+
+    // ✅ Show scanned list
+    async function showScanned() {
+      const snapshot = await get(child(ref(db), "attendance"));
+      let data = snapshot.exists() ? snapshot.val() : {};
+      let html = "<h3>Scanned ✅</h3><ul>";
+      for (let id in data) {
+        if (data[id].scanned) {
+          html += `<li>${id} at ${data[id].time}</li>`;
+        }
       }
+      html += "</ul>";
+      document.getElementById("output").innerHTML = html;
     }
 
-    async function stopScanner(){
-      try{
-        if(qr && qr.isScanning) { await qr.stop(); setStatus("Scanner stopped."); }
-      }catch(e){ setStatus("Stop error: "+e, "bad"); }
+    // ✅ Show pending list
+    async function showPending() {
+      const snapshot = await get(child(ref(db), "attendance"));
+      let data = snapshot.exists() ? snapshot.val() : {};
+
+      let html = "<h3>Pending ⌛</h3><ul>";
+      masterList.forEach(row => {
+        if (!(row.ID in data)) {
+          html += `<li>${row.ID} - ${row.Name}</li>`;
+        }
+      });
+      html += "</ul>";
+      document.getElementById("output").innerHTML = html;
     }
 
-    function onScan(text){
-      const id = norm(text);
-      if(!id){ setStatus("Empty QR.", "bad"); return; }
+    // Load master list when page loads
+    window.onload = loadCSV;
 
-      // Optional: check if ID exists in master
-      const exists = master.find(p=>p.ID===id);
-      if(!exists){
-        setStatus(`Scanned ID not in master list: ${id}`, "warn");
-      }
-
-      const personRef = ref(db, "attendance/"+id);
-      set(personRef, { scanned:true, time:new Date().toISOString() })
-        .then(()=> setStatus(`✅ Marked: ${id}${exists? " – "+exists.Name:""}`,"ok"))
-        .catch(err=> setStatus("Save error: "+err, "bad"));
-    }
-
-    /*************** 6) Buttons: reset & views ****************/
-    function resetAll(){
-      if(!confirm("This will clear ALL scanned data for everyone. Continue?")) return;
-      remove(ref(db,"attendance")).then(()=>{
-        setStatus("All attendance cleared.", "warn");
-      }).catch(err=> setStatus("Reset error: "+err, "bad"));
-    }
-
-    function renderAll(){
-      // counts
-      const total = master.length;
-      const scannedCount = Object.keys(attendance).length;
-      const pendingCount = Math.max(total - scannedCount, 0);
-      $("#total").textContent   = total;
-      $("#scanned").textContent = scannedCount;
-      $("#pending").textContent = pendingCount;
-
-      // filters
-      const q = norm($("#search").value || "");
-      const onlyPending = $("#filterPending").checked;
-
-      // build fast lookup for scanned
-      const scannedSet = new Set(Object.keys(attendance).map(norm));
-
-      // build rows
-      const pendingRows = [];
-      const scannedRows = [];
-
-      // show from master (so we have names/amounts)
-      for(const person of master){
-        const scanned = scannedSet.has(person.ID);
-        if(onlyPending && scanned) continue;
-        if(q && !person.ID.includes(q) && !norm(person.Name).includes(q)) continue;
-
-        const row = `<tr>
-            <td>${person.ID}</td>
-            <td>${person.Name||"<span class='muted'>—</span>"}</td>
-            <td>${person.Amount||"<span class='muted'>—</span>"}</td>
-            <td>${ scanned
-                  ? `<span class="tag">✅ ${new Date(attendance[person.ID]?.time || "").toLocaleString()}</span>`
-                  : `<span class="tag">⌛ Pending</span>`}
-            </td>
-          </tr>`;
-
-        (scanned ? scannedRows : pendingRows).push(row);
-      }
-
-      $("#pendingBody").innerHTML = pendingRows.join("") || `<tr><td colspan="4" class="muted">No pending</td></tr>`;
-      $("#scannedBody").innerHTML = scannedRows.join("") || `<tr><td colspan="4" class="muted">No scanned</td></tr>`;
-    }
-
-    // search & filters
-    window.addEventListener("input", (e)=>{
-      if(e.target.id==="search" || e.target.id==="filterPending") renderAll();
-    });
-
-    /*************** 7) Expose controls to buttons ****************/
+    // Expose functions to buttons
     window.startScanner = startScanner;
-    window.stopScanner  = stopScanner;
-    window.resetAll     = resetAll;
-
-    /*************** 8) Init ****************/
-    window.addEventListener("load", ()=>{
-      loadMasterCSV();   // loads ID,Name,Amount from masterlist.csv
-      watchAttendance(); // live updates from Firebase
-    });
+    window.resetData = resetData;
+    window.showScanned = showScanned;
+    window.showPending = showPending;
   </script>
 </head>
 <body>
-  <header>
-    <div class="title">📷 QR Attendance (Realtime)</div>
-    <div class="stats">
-      <span class="pill">Total: <b id="total">0</b></span>
-      <span class="pill ok">Scanned: <b id="scanned">0</b></span>
-      <span class="pill warn">Pending: <b id="pending">0</b></span>
-    </div>
-  </header>
+  <h1>QR Attendance System</h1>
 
-  <main>
-    <section class="card">
-      <h2>Scanner</h2>
-      <div id="reader"></div>
-      <div class="controls">
-        <button class="primary" onclick="startScanner()">▶ Start</button>
-        <button onclick="stopScanner()">⏹ Stop</button>
-        <button class="danger" onclick="resetAll()">🔄 Reset All</button>
-      </div>
-      <div class="status muted">Load your printed QR and tap Start.</div>
-    </section>
+  <div id="reader"></div>
 
-    <section class="card">
-      <h2>Search & Filter</h2>
-      <div class="grid-2">
-        <input id="search" type="text" placeholder="Search by ID or Name…" />
-        <label style="display:flex;gap:8px;align-items:center;justify-content:flex-start">
-          <input id="filterPending" type="checkbox" />
-          Show only Pending
-        </label>
-      </div>
-      <p class="muted" style="margin-top:8px">Make sure <code>masterlist.csv</code> is uploaded next to this file.</p>
-    </section>
+  <div>
+    <button onclick="startScanner()">▶ Start Scanner</button>
+    <button onclick="showScanned()">✅ Show Scanned</button>
+    <button onclick="showPending()">⌛ Show Pending</button>
+    <button onclick="resetData()">🔄 Reset</button>
+  </div>
 
-    <section class="card lists">
-      <div class="list">
-        <h2>Pending ⌛</h2>
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Amount</th><th>Status</th></tr></thead>
-          <tbody id="pendingBody"></tbody>
-        </table>
-      </div>
-
-      <div class="list">
-        <h2>Scanned ✅</h2>
-        <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Amount</th><th>Status</th></tr></thead>
-          <tbody id="scannedBody"></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
+  <div id="output"></div>
 </body>
 </html>
-
