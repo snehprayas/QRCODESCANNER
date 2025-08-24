@@ -1,15 +1,23 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>QR Code Attendance</title>
+  <meta charset="UTF-8">
+  <title>QR Code Scanner</title>
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-  <!-- ✅ Import QR scanner library -->
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js"></script>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #reader { width: 320px; height: 320px; margin-bottom: 10px; }
+    button { margin: 5px; padding: 10px; }
+    #output { margin-top: 20px; font-weight: bold; }
+  </style>
 </head>
 <body>
   <h1>QR Code Scanner</h1>
-  <div id="reader" style="width:350px; height:350px; border:1px solid black;"></div>
 
+  <div id="reader"></div>
   <button onclick="startScanner()">Start Scanner</button>
   <button onclick="showScanned()">Show Scanned</button>
   <button onclick="showPending()">Show Pending</button>
@@ -17,12 +25,11 @@
 
   <div id="output"></div>
 
-  <!-- Firebase + App Code -->
   <script type="module">
+    // ---------------- FIREBASE ----------------
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-    import { getDatabase, ref, set, remove, get } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+    import { getDatabase, ref, set, get, child, remove } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
 
-    // ✅ Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyDnlTfbTFtFZzAEXNHaq2UqVLdTYVfrbW4",
       authDomain: "qr-attendance-79e24.firebaseapp.com",
@@ -31,75 +38,60 @@
       messagingSenderId: "255067675399",
       appId: "1:255067675399:web:501f5b0348a38999ed03a2",
       measurementId: "G-3B1Q8B6DDD",
-      databaseURL: "https://qr-attendance-79e24-default-rtdb.firebaseio.com/"
+      databaseURL: "https://qr-attendance-79e24-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
+    // ---------------- MASTER LIST ----------------
     let masterList = [];
-    let html5QrCode;
 
-    // ✅ Load master list from CSV
-    function loadCSV() {
-      Papa.parse("masterlist.csv", {
-        download: true,
-        header: true,
-        complete: function(results) {
-          masterList = results.data.filter(row => row.ID);
-          console.log("Loaded master list:", masterList);
+    fetch("masterlist.csv")
+      .then(response => response.text())
+      .then(csvText => {
+        Papa.parse(csvText, {
+          header: true,
+          complete: function(results) {
+            masterList = results.data.map(row => ({
+              ID: row["Row Label"] ? row["Row Label"].trim() : "",
+              Name: row["NAME"] ? row["NAME"].trim() : ""
+            })).filter(p => p.ID !== "");
+            console.log("✅ Loaded master list:", masterList);
+          }
+        });
+      });
+
+    // ---------------- QR SCANNER ----------------
+    let html5QrcodeScanner;
+
+    function startScanner() {
+      const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+        markScanned(decodedText);
+      };
+
+      html5QrcodeScanner = new Html5Qrcode("reader");
+      Html5Qrcode.getCameras().then(devices => {
+        if (devices && devices.length) {
+          // Rear camera = last one
+          const cameraId = devices[devices.length - 1].id;
+          html5QrcodeScanner.start(
+            cameraId,
+            { fps: 10, qrbox: 250 },
+            qrCodeSuccessCallback
+          );
         }
       });
     }
 
-    // ✅ Start QR Scanner (rear camera preferred)
-    async function startScanner() {
-      if (html5QrCode) {
-        await html5QrCode.stop();
-      }
-      html5QrCode = new Html5Qrcode("reader");
+    // ---------------- MARK SCANNED ----------------
+    function markScanned(qrValue) {
+      // If QR is a link, take the last part after "/"
+      let id = qrValue.includes("/") ? qrValue.split("/").pop().trim() : qrValue.trim();
 
-      try {
-        const devices = await Html5Qrcode.getCameras();
-        if (devices && devices.length) {
-          // Prefer rear camera if available
-          let cameraId;
-          const rearCam = devices.find(d => 
-            d.label.toLowerCase().includes("back") || 
-            d.label.toLowerCase().includes("rear") || 
-            d.label.toLowerCase().includes("environment")
-          );
-          if (rearCam) {
-            cameraId = rearCam.id;
-          } else {
-            cameraId = devices[0].id; // fallback to first camera
-          }
-
-          await html5QrCode.start(
-            cameraId,
-            { fps: 15, qrbox: { width: 300, height: 300 } },
-            (decodedText) => {
-              console.log("Scanned:", decodedText);
-              markScanned(decodedText.trim());
-            },
-            (errorMessage) => {
-              // Ignore errors
-            }
-          );
-        } else {
-          alert("No camera found!");
-        }
-      } catch (err) {
-        console.error("Error starting scanner:", err);
-        alert("Camera access denied or not supported.");
-      }
-    }
-
-    // ✅ Mark scanned in Firebase
-    function markScanned(id) {
       const person = masterList.find(p => p.ID === id);
       if (!person) {
-        alert("ID not in master list: " + id);
+        alert("⚠️ ID not in master list: " + id);
         return;
       }
 
@@ -110,51 +102,41 @@
       });
 
       document.getElementById("output").innerText =
-        "Scanned: " + person.ID + " - " + person.Name;
+        "✅ Scanned: " + person.ID + " - " + person.Name;
     }
 
-    // ✅ Show scanned list
-    async function showScanned() {
-      const snapshot = await get(ref(db, "scanned"));
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        let html = "<h3>Scanned</h3><ul>";
-        Object.values(data).forEach(p => {
-          html += `<li>${p.ID} - ${p.Name} (${p.time})</li>`;
-        });
-        html += "</ul>";
-        document.getElementById("output").innerHTML = html;
-      } else {
-        document.getElementById("output").innerHTML = "<p>No data scanned yet</p>";
+    // ---------------- SHOW SCANNED ----------------
+    function showScanned() {
+      get(child(ref(db), "scanned")).then(snapshot => {
+        if (snapshot.exists()) {
+          let data = snapshot.val();
+          let list = Object.values(data)
+            .map(p => p.ID + " - " + p.Name + " (" + p.time + ")")
+            .join("<br>");
+          document.getElementById("output").innerHTML = "<h3>Scanned:</h3>" + list;
+        } else {
+          document.getElementById("output").innerText = "No scans yet.";
+        }
+      });
+    }
+
+    // ---------------- SHOW PENDING ----------------
+    function showPending() {
+      get(child(ref(db), "scanned")).then(snapshot => {
+        let scannedIDs = snapshot.exists() ? Object.keys(snapshot.val()) : [];
+        let pending = masterList.filter(p => !scannedIDs.includes(p.ID));
+        let list = pending.map(p => p.ID + " - " + p.Name).join("<br>");
+        document.getElementById("output").innerHTML = "<h3>Pending:</h3>" + list;
+      });
+    }
+
+    // ---------------- RESET ----------------
+    function resetData() {
+      if (confirm("Are you sure you want to clear all data?")) {
+        remove(ref(db, "scanned"));
+        document.getElementById("output").innerText = "All scan data cleared.";
       }
     }
-
-    // ✅ Show pending list
-    async function showPending() {
-      const snapshot = await get(ref(db, "scanned"));
-      const scanned = snapshot.exists() ? Object.keys(snapshot.val()) : [];
-      const pending = masterList.filter(p => !scanned.includes(p.ID));
-
-      let html = "<h3>Pending</h3><ul>";
-      pending.forEach(p => {
-        html += `<li>${p.ID} - ${p.Name}</li>`;
-      });
-      html += "</ul>";
-      document.getElementById("output").innerHTML = html;
-    }
-
-    // ✅ Reset database
-    function resetData() {
-      remove(ref(db, "scanned"));
-      document.getElementById("output").innerText = "Data reset.";
-    }
-
-    // Expose functions to buttons
-    window.onload = loadCSV;
-    window.startScanner = startScanner;
-    window.showScanned = showScanned;
-    window.showPending = showPending;
-    window.resetData = resetData;
   </script>
 </body>
 </html>
