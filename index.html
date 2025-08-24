@@ -5,28 +5,35 @@
   <title>QR Code Scanner</title>
   <!-- PapaParse for CSV -->
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-  <!-- Firebase v8 (namespaced, no imports needed) -->
+  <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <!-- QR Scanner -->
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    #reader { width: 320px; height: 320px; margin-bottom: 10px; }
-    button { margin: 5px; padding: 10px; }
-    #output { margin-top: 20px; font-weight: bold; }
-    table { border-collapse: collapse; margin-top: 10px; }
-    td, th { border: 1px solid #ccc; padding: 5px 10px; }
+    .container { display: flex; gap: 20px; }
+    #reader { width: 320px; height: 320px; border: 1px solid #ccc; }
+    .controls { display: flex; flex-direction: column; gap: 10px; }
+    button { padding: 10px; cursor: pointer; font-size: 14px; }
+    #output { margin-top: 20px; flex: 1; }
+    table { border-collapse: collapse; margin-top: 10px; width: 100%; }
+    td, th { border: 1px solid #ccc; padding: 5px 10px; text-align: left; }
+    h3 { margin-top: 20px; }
   </style>
 </head>
 <body>
   <h1>QR Code Scanner</h1>
 
-  <div id="reader"></div>
-  <button onclick="startScanner()">Start Scanner</button>
-  <button onclick="showScanned()">Show Scanned</button>
-  <button onclick="showPending()">Show Pending</button>
-  <button onclick="resetData()">Reset</button>
+  <div class="container">
+    <div id="reader"></div>
+    <div class="controls">
+      <button onclick="startScanner()">Start Scanner</button>
+      <button onclick="showScanned()">Show Scanned</button>
+      <button onclick="showPending()">Show Pending</button>
+      <button onclick="resetData()">Reset</button>
+    </div>
+  </div>
 
   <div id="output"></div>
 
@@ -84,7 +91,6 @@
       html5QrcodeScanner = new Html5Qrcode("reader");
       Html5Qrcode.getCameras().then(devices => {
         if (devices && devices.length) {
-          // Use rear camera if available
           const cameraId = devices.length > 1 ? devices[devices.length - 1].id : devices[0].id;
           html5QrcodeScanner.start(
             cameraId,
@@ -110,33 +116,15 @@
         time: new Date().toLocaleString()
       });
 
-      // Show details
-      document.getElementById("output").innerHTML = `
-        <h3>✅ Scanned</h3>
-        <table>
-          <tr><th>ID</th><td>${person.ID}</td></tr>
-          <tr><th>Name</th><td>${person.Name}</td></tr>
-          <tr><th>Contact</th><td>${person.Contact}</td></tr>
-          <tr><th>Age</th><td>${person.Age}</td></tr>
-          <tr><th>Gender</th><td>${person.Gender}</td></tr>
-          <tr><th>Size</th><td>${person.Size}</td></tr>
-          <tr><th>Paid</th><td>${person.Paid}</td></tr>
-          <tr><th>Due</th><td>${person.Due}</td></tr>
-          <tr><th>Total</th><td>${person.Total}</td></tr>
-          <tr><th>Confirmation</th><td>${person.Confirmation}</td></tr>
-        </table>
-      `;
+      renderTable([person], "✅ Scanned");
     }
 
     // ---------------- SHOW SCANNED ----------------
     function showScanned() {
       db.ref("scanned").once("value").then(snapshot => {
         if (snapshot.exists()) {
-          let data = snapshot.val();
-          let list = Object.values(data)
-            .map(p => p.ID + " - " + p.Name + " (" + p.time + ")")
-            .join("<br>");
-          document.getElementById("output").innerHTML = "<h3>Scanned:</h3>" + list;
+          let data = Object.values(snapshot.val());
+          renderTable(data, "📋 Scanned List");
         } else {
           document.getElementById("output").innerText = "No scans yet.";
         }
@@ -148,8 +136,7 @@
       db.ref("scanned").once("value").then(snapshot => {
         let scannedIDs = snapshot.exists() ? Object.keys(snapshot.val()) : [];
         let pending = masterList.filter(p => !scannedIDs.includes(p.ID));
-        let list = pending.map(p => p.ID + " - " + p.Name).join("<br>");
-        document.getElementById("output").innerHTML = "<h3>Pending:</h3>" + list;
+        renderTable(pending, "⏳ Pending List");
       });
     }
 
@@ -159,6 +146,24 @@
         db.ref("scanned").remove();
         document.getElementById("output").innerText = "All scan data cleared.";
       }
+    }
+
+    // ---------------- RENDER TABLE ----------------
+    function renderTable(list, title) {
+      if (!list.length) {
+        document.getElementById("output").innerHTML = `<h3>${title}</h3>No records found.`;
+        return;
+      }
+
+      let headers = Object.keys(list[0]);
+      let table = "<h3>" + title + "</h3><table><tr>" + headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
+
+      list.forEach(p => {
+        table += "<tr>" + headers.map(h => `<td>${p[h] || ""}</td>`).join("") + "</tr>";
+      });
+
+      table += "</table>";
+      document.getElementById("output").innerHTML = table;
     }
   </script>
 </body>
