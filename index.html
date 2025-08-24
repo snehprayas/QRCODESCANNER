@@ -2,173 +2,181 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>QR Code Scanner</title>
-  <!-- PapaParse for CSV -->
-  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-  <!-- Firebase v8 -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-  <!-- QR Scanner -->
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <title>QR Attendance Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .container { display: flex; gap: 20px; align-items: flex-start; }
-    #reader { width: 320px; height: 320px; border: 1px solid #ccc; }
-    .controls { display: flex; flex-direction: column; gap: 10px; }
-    button { padding: 10px; cursor: pointer; font-size: 14px; }
-    #output { margin-top: 20px; flex: 1; }
-    table { border-collapse: collapse; margin-top: 10px; width: 100%; }
-    td, th { border: 1px solid #ccc; padding: 5px 10px; text-align: left; }
-    h3 { margin-top: 20px; }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    #reader {
+      width: 100%;
+      max-width: 400px;
+      margin: 10px auto;
+    }
+    .buttons {
+      margin: 15px 0;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+    button {
+      padding: 10px 15px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #007bff;
+      color: white;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    #output {
+      margin: 15px;
+      text-align: left;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: #f9f9f9;
+    }
   </style>
 </head>
 <body>
-  <h1>QR Code Scanner</h1>
 
-  <div class="container">
-    <div id="reader"></div>
-    <div class="controls">
-      <button onclick="startScanner()">Start Scanner</button>
-      <button onclick="showScanned()">Show Scanned</button>
-      <button onclick="showPending()">Show Pending</button>
-      <button onclick="resetData()">Reset</button>
-    </div>
+  <h2>📷 QR Attendance Scanner</h2>
+  <div id="reader"></div>
+
+  <div class="buttons">
+    <button onclick="startScanner()">Start Scanner</button>
+    <button onclick="showScanned()">Show Scanned</button>
+    <button onclick="showPending()">Show Pending</button>
+    <button onclick="resetData()">Reset</button>
   </div>
 
-  <div id="output"></div>
+  <div id="output">Scanned results will appear here...</div>
+
+  <!-- Html5Qrcode library -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.10/minified/html5-qrcode.min.js"></script>
+
+  <!-- Firebase compat libraries -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
   <script>
-    // ---------------- FIREBASE ----------------
-    var firebaseConfig = {
+    // Firebase Config
+    const firebaseConfig = {
       apiKey: "AIzaSyDnlTfbTFtFZzAEXNHaq2UqVLdTYVfrbW4",
       authDomain: "qr-attendance-79e24.firebaseapp.com",
+      databaseURL: "https://qr-attendance-79e24-default-rtdb.asia-southeast1.firebasedatabase.app",
       projectId: "qr-attendance-79e24",
       storageBucket: "qr-attendance-79e24.appspot.com",
       messagingSenderId: "255067675399",
       appId: "1:255067675399:web:501f5b0348a38999ed03a2",
-      measurementId: "G-3B1Q8B6DDD",
-      databaseURL: "https://qr-attendance-79e24-default-rtdb.asia-southeast1.firebasedatabase.app/"
+      measurementId: "G-3B1Q8B6DDD"
     };
+
     firebase.initializeApp(firebaseConfig);
-    var db = firebase.database();
+    const db = firebase.database();
 
-    // ---------------- MASTER LIST ----------------
-    let masterList = [];
+    let masterList = {};
+    let scannedIds = [];
 
-    fetch("masterlist.csv")
-      .then(response => response.text())
-      .then(csvText => {
-        Papa.parse(csvText, {
-          header: true,
-          complete: function(results) {
-            masterList = results.data.map(row => ({
-              ID: row["Row Labels"] ? row["Row Labels"].trim() : "",
-              SLNO: row["SL NO"] || "",
-              Books: row["Sum of BOOKS TALLY"] || "",
-              Name: row["NAME"] || "",
-              Contact: row["CONTACT"] || "",
-              Age: row["AGE"] || "",
-              Gender: row["M/F"] || "",
-              Size: row["SIZE"] || "",
-              Paid: row["Paid"] || "",
-              Due: row["Due"] || "",
-              Total: row["Total"] || "",
-              Confirmation: row["Confirmation"] || ""
-            })).filter(p => p.ID !== "");
-            console.log("✅ Loaded master list:", masterList);
-          }
+    // Load masterlist CSV
+    async function loadMasterList() {
+      try {
+        const res = await fetch("masterlist.csv");
+        const text = await res.text();
+        const rows = text.split("\n").map(r => r.trim()).filter(r => r);
+        rows.forEach(row => {
+          const cols = row.split(",");
+          const id = cols[0].trim();
+          masterList[id] = cols.join(", ");
         });
-      });
+        console.log("✅ Loaded master list:", masterList);
+      } catch (err) {
+        console.error("Error loading masterlist:", err);
+      }
+    }
 
-    // ---------------- QR SCANNER ----------------
-    let html5QrcodeScanner;
-
+    // Start Scanner
     function startScanner() {
-      const qrCodeSuccessCallback = (decodedText) => {
-        markScanned(decodedText);
-      };
-
-      html5QrcodeScanner = new Html5Qrcode("reader");
-      Html5Qrcode.getCameras().then(devices => {
-        if (devices && devices.length) {
-          const cameraId = devices.length > 1 ? devices[devices.length - 1].id : devices[0].id;
-          html5QrcodeScanner.start(
-            cameraId,
+      const html5QrCode = new Html5Qrcode("reader");
+      Html5Qrcode.getCameras().then(cameras => {
+        if (cameras && cameras.length) {
+          let rearCamera = cameras.find(c => c.label.toLowerCase().includes("back")) || cameras[0];
+          html5QrCode.start(
+            { deviceId: { exact: rearCamera.id } },
             { fps: 10, qrbox: 250 },
-            qrCodeSuccessCallback
+            qrCodeMessage => handleScan(qrCodeMessage),
+            error => {}
           );
         }
-      });
+      }).catch(err => console.error(err));
     }
 
-    // ---------------- MARK SCANNED ----------------
-    function markScanned(qrValue) {
-      let id = qrValue.includes("/") ? qrValue.split("/").pop().trim() : qrValue.trim();
-
-      const person = masterList.find(p => p.ID === id);
-      if (!person) {
-        alert("⚠️ ID not in master list: " + id);
+    // Handle QR Scan
+    function handleScan(qrMessage) {
+      const id = qrMessage.trim();
+      if (!masterList[id]) {
+        document.getElementById("output").innerHTML = `<p style="color:red;">❌ ID not in masterlist: ${id}</p>`;
         return;
       }
-
-      db.ref("scanned/" + id).set({
-        ...person,
-        time: new Date().toLocaleString()
-      });
-
-      renderTable([person], "✅ Scanned");
+      if (!scannedIds.includes(id)) {
+        scannedIds.push(id);
+        db.ref("scanned/" + id).set(true);
+        document.getElementById("output").innerHTML = `<p style="color:green;">✅ Scanned: ${masterList[id]}</p>`;
+      } else {
+        document.getElementById("output").innerHTML = `<p>⚠️ Already scanned: ${masterList[id]}</p>`;
+      }
     }
 
-    // ---------------- SHOW SCANNED ----------------
+    // Show scanned
     function showScanned() {
-      db.ref("scanned").once("value").then(snapshot => {
-        if (snapshot.exists()) {
-          let data = Object.values(snapshot.val());
-          renderTable(data, "📋 Scanned List");
-        } else {
-          document.getElementById("output").innerHTML = "<h3>📋 Scanned List</h3>No scans yet.";
+      db.ref("scanned").once("value", snapshot => {
+        const data = snapshot.val();
+        if (!data) {
+          document.getElementById("output").innerHTML = "<p>No one scanned yet.</p>";
+          return;
         }
-      }).catch(err => {
-        console.error("Error fetching scanned:", err);
+        const ids = Object.keys(data);
+        const list = ids.map(id => masterList[id] || id).join("<br>");
+        document.getElementById("output").innerHTML = `<h3>✅ Scanned:</h3>${list}`;
       });
     }
 
-    // ---------------- SHOW PENDING ----------------
+    // Show pending
     function showPending() {
-      db.ref("scanned").once("value").then(snapshot => {
-        let scannedIDs = snapshot.exists() ? Object.keys(snapshot.val()) : [];
-        let pending = masterList.filter(p => !scannedIDs.includes(p.ID));
-        renderTable(pending, "⏳ Pending List");
-      }).catch(err => {
-        console.error("Error fetching pending:", err);
+      db.ref("scanned").once("value", snapshot => {
+        const scanned = snapshot.val() ? Object.keys(snapshot.val()) : [];
+        const pending = Object.keys(masterList).filter(id => !scanned.includes(id));
+        const list = pending.map(id => masterList[id]).join("<br>");
+        document.getElementById("output").innerHTML = `<h3>⏳ Pending:</h3>${list}`;
       });
     }
 
-    // ---------------- RESET ----------------
+    // Reset data
     function resetData() {
-      if (confirm("Are you sure you want to clear all data?")) {
-        db.ref("scanned").remove();
-        document.getElementById("output").innerText = "All scan data cleared.";
-      }
+      db.ref("scanned").remove();
+      scannedIds = [];
+      document.getElementById("output").innerHTML = "<p>🔄 All data reset.</p>";
     }
 
-    // ---------------- RENDER TABLE ----------------
-    function renderTable(list, title) {
-      if (!list.length) {
-        document.getElementById("output").innerHTML = `<h3>${title}</h3>No records found.`;
-        return;
-      }
-
-      let headers = Object.keys(list[0]);
-      let table = "<h3>" + title + "</h3><table><tr>" + headers.map(h => `<th>${h}</th>`).join("") + "</tr>";
-
-      list.forEach(p => {
-        table += "<tr>" + headers.map(h => `<td>${p[h] || ""}</td>`).join("") + "</tr>";
+    // Auto-load masterlist & scanned IDs on page load
+    window.onload = function() {
+      loadMasterList();
+      db.ref("scanned").once("value", snapshot => {
+        scannedIds = snapshot.val() ? Object.keys(snapshot.val()) : [];
+        console.log("🔄 Restored scanned IDs:", scannedIds);
       });
-
-      table += "</table>";
-      document.getElementById("output").innerHTML = table;
-    }
+    };
   </script>
+
 </body>
 </html>
