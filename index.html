@@ -49,105 +49,108 @@
   </div>
 
   <script>
-    // Use your provided Apps Script URL here:
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzzROY9RnYuwBDclCyQidTN-jmQegiuZyo9dhsCfbYVGFSUwcdX1qfxmJwjLeLWKQhr/exec";
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzzROY9RnYuwBDclCyQidTN-jmQegiuZyo9dhsCfbYVGFSUwcdX1qfxmJwjLeLWKQhr/exec";
 
-    let html5QrCode = null;
-    let preferBack = true;
-    let master = {};
-    let sharedScanned = [];
+  let html5QrCode = new Html5Qrcode("reader");
+  let preferBack = true;
+  let master = {};
+  let sharedScanned = [];
+  let scannerRunning = false;   // 👈 our own flag
 
-    window.addEventListener("load", async () => {
-      await refreshData();
-      setInterval(refreshData, 2000);
-    });
+  window.addEventListener("load", async () => {
+    await refreshData();
+    setInterval(refreshData, 2000);
+  });
 
-    async function refreshData() {
-      // Load masterlist
-      const m = await fetch(SCRIPT_URL).then(r => r.json()).catch(() => ({}));
-      if (Object.keys(m).length) master = m;
+  async function refreshData() {
+    const m = await fetch(SCRIPT_URL).then(r => r.json()).catch(() => ({}));
+    if (Object.keys(m).length) master = m;
 
-      // Load shared scanned list
-      sharedScanned = await fetch(`${SCRIPT_URL}?scanned=true`)
-        .then(r => r.json()).catch(() => sharedScanned);
+    sharedScanned = await fetch(`${SCRIPT_URL}?scanned=true`)
+      .then(r => r.json()).catch(() => sharedScanned);
 
-      updateLists();
-    }
+    updateLists();
+  }
 
-    function updateLists() {
-      document.getElementById("scannedList").textContent =
-        "Scanned:\n" + (sharedScanned.join("\n") || "—");
+  function updateLists() {
+    document.getElementById("scannedList").textContent =
+      "Scanned:\n" + (sharedScanned.join("\n") || "—");
 
-      const pending = Object.keys(master).filter(id => !sharedScanned.includes(id));
-      document.getElementById("pendingList").textContent =
-        "Pending:\n" + (pending.join("\n") || "—");
-    }
+    const pending = Object.keys(master).filter(id => !sharedScanned.includes(id));
+    document.getElementById("pendingList").textContent =
+      "Pending:\n" + (pending.join("\n") || "—");
+  }
 
-    function setLog(msg) {
-      document.getElementById("log").textContent = msg;
-    }
+  function setLog(msg) {
+    document.getElementById("log").textContent = msg;
+  }
 
-    async function startScanner() {
-      try {
-        if (html5QrCode) await html5QrCode.stop();
-        html5QrCode = new Html5Qrcode("reader");
-        const cams = await Html5Qrcode.getCameras();
-        if (!cams || !cams.length) {
-          alert("No camera detected!");
-          return;
-        }
-        const camId = (preferBack && cams.length > 1) ? cams[cams.length - 1].id : cams[0].id;
-        await html5QrCode.start(camId, { fps: 10, qrbox: 250 }, onScanSuccess, _ => {});
-        setLog("Scanning...");
-      } catch (err) {
-        console.error(err);
-        setLog("Error starting scanner");
-      }
-    }
-
-    async function stopScanner() {
-      if (html5QrCode) {
-        await html5QrCode.stop();
-        setLog("Scanner stopped");
-      }
-    }
-
-    async function flipCamera() {
-      preferBack = !preferBack;
-      await stopScanner();
-      await startScanner();
-    }
-
-    async function onScanSuccess(decodedText) {
-      const id = decodedText.trim();
-      if (!master[id]) {
-        setLog(`❌ Not in masterlist: ${id}`);
+  async function startScanner() {
+    try {
+      if (scannerRunning) {
+        setLog("Scanner already running");
         return;
       }
-      setLog(`Scanned: ${id} (${master[id].NAME || ""})`);
-
-      await fetch(`${SCRIPT_URL}?action=scan&id=${encodeURIComponent(id)}`)
-        .then(r => r.json()).catch(() => null);
-      await refreshData();
+      const cams = await Html5Qrcode.getCameras();
+      if (!cams || !cams.length) {
+        alert("No camera detected!");
+        return;
+      }
+      const camId = (preferBack && cams.length > 1) ? cams[cams.length - 1].id : cams[0].id;
+      await html5QrCode.start(camId, { fps: 10, qrbox: 250 }, onScanSuccess);
+      scannerRunning = true;
+      setLog("Scanning...");
+    } catch (err) {
+      console.error(err);
+      setLog("Error starting scanner");
     }
+  }
 
-    async function showScanned() {
-      await refreshData();
-      alert("Scanned:\n" + (sharedScanned.join(", ") || "None"));
+  async function stopScanner() {
+    if (scannerRunning) {
+      await html5QrCode.stop();
+      scannerRunning = false;
+      setLog("Scanner stopped");
     }
+  }
 
-    async function showPending() {
-      await refreshData();
-      const pending = Object.keys(master).filter(id => !sharedScanned.includes(id));
-      alert("Pending:\n" + (pending.join(", ") || "None"));
-    }
+  async function flipCamera() {
+    preferBack = !preferBack;
+    await stopScanner();
+    await startScanner();
+  }
 
-    async function resetAll() {
-      if (!confirm("Clear all scanned marks for everyone?")) return;
-      await fetch(`${SCRIPT_URL}?action=reset`).then(r => r.json()).catch(() => null);
-      await refreshData();
-      setLog("All cleared");
+  async function onScanSuccess(decodedText) {
+    const id = decodedText.trim();
+    if (!master[id]) {
+      setLog(`❌ Not in masterlist: ${id}`);
+      return;
     }
-  </script>
+    setLog(`Scanned: ${id} (${master[id].NAME || ""})`);
+
+    await fetch(`${SCRIPT_URL}?action=scan&id=${encodeURIComponent(id)}`)
+      .then(r => r.json()).catch(() => null);
+    await refreshData();
+  }
+
+  async function showScanned() {
+    await refreshData();
+    alert("Scanned:\n" + (sharedScanned.join(", ") || "None"));
+  }
+
+  async function showPending() {
+    await refreshData();
+    const pending = Object.keys(master).filter(id => !sharedScanned.includes(id));
+    alert("Pending:\n" + (pending.join(", ") || "None"));
+  }
+
+  async function resetAll() {
+    if (!confirm("Clear all scanned marks for everyone?")) return;
+    await fetch(`${SCRIPT_URL}?action=reset`).then(r => r.json()).catch(() => null);
+    await refreshData();
+    setLog("All cleared");
+  }
+</script>
+
 </body>
 </html>
