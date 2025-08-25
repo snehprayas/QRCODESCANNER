@@ -1,107 +1,226 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>QR Attendance</title>
+  <!-- QR library -->
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; background: #0b1220; color: white; text-align: center; }
-    #reader { width: 350px; margin: auto; }
-    button { margin: 10px; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
-    .good { background: #39d353; color: black; }
-    .warn { background: #f0b429; }
-    .bad { background: #ff6b6b; }
+    :root {
+      --bg: #0b1220; --card: #121a2a; --muted: #9fb0d3;
+      --accent: #4cc9f0; --good:#39d353; --warn:#f0b429; --bad:#ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui,Segoe UI,Roboto,Arial,sans-serif; background: var(--bg); color:#fff; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    h1 { margin: 8px 0 12px; font-weight: 700; }
+    .controls { display:flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; position: sticky; top: 0; background: var(--bg); padding: 8px 0; z-index: 2; }
+    button { border: 1px solid #233; background: #182235; color:#fff; padding:10px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    button:hover { background:#1f2d49; }
+    .good { background: var(--good); color:#000; border-color: transparent; }
+    .warn { background: var(--warn); color:#000; border-color: transparent; }
+    .bad  { background: var(--bad); color:#000; border-color: transparent; }
+    #readerCard { background: var(--card); border: 1px solid #24304a; border-radius: 12px; padding: 12px; }
+    #reader { width: 100%; max-width: 480px; margin: 0 auto; }
+    #log { white-space: pre-wrap; background: #0f1627; border: 1px solid #233148; border-radius: 10px; padding: 10px; min-height: 80px; }
+    .flex { display:flex; gap:12px; align-items:flex-start; flex-wrap: wrap; }
+    .card { flex:1 1 320px; background: var(--card); border:1px solid #24304a; border-radius: 12px; padding:12px; min-height: 100px; }
+    .list { max-height: 260px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+    .pill { display:inline-block; background:#193356; color:#9fd7ff; padding:2px 8px; border-radius: 999px; margin-left: 8px; font-size: 12px; border:1px solid #27507a; }
   </style>
 </head>
 <body>
-  <h2>📷 QR Attendance Scanner</h2>
-  <div id="reader"></div>
-  <div>
-    <button onclick="startScanner()">Start Scanner</button>
-    <button onclick="stopScanner()">Stop Scanner</button>
-    <button onclick="flipCamera()">Flip Camera</button>
-    <button onclick="showScanned()">Show Scanned</button>
-    <button onclick="showPending()">Show Pending</button>
+  <div class="wrap">
+    <h1>📷 QR Attendance <span id="statusPill" class="pill">idle</span></h1>
+
+    <div class="controls">
+      <button onclick="startScanner()">Start Scanner</button>
+      <button onclick="stopScanner()">Stop</button>
+      <button onclick="flipCamera()">Flip Camera</button>
+      <button class="good" onclick="showScanned()">Show Scanned</button>
+      <button class="warn" onclick="showPending()">Show Pending</button>
+      <button class="bad"  onclick="resetAll()">Reset (Global)</button>
+    </div>
+
+    <div id="readerCard">
+      <div id="reader"></div>
+    </div>
+
+    <div class="flex" style="margin-top:12px;">
+      <div class="card">
+        <b>Last Scan</b>
+        <div id="log">Ready.</div>
+      </div>
+      <div class="card">
+        <b>Scanned (shared)</b>
+        <div id="scannedList" class="list">—</div>
+      </div>
+      <div class="card">
+        <b>Pending (shared)</b>
+        <div id="pendingList" class="list">—</div>
+      </div>
+    </div>
   </div>
-  <pre id="output"></pre>
 
   <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw4PwCVszHCvIirwcR7OMVkpTtgsc8ZkmEZcBIPhHB5NZZ3z9BGojpB3VBxM3KHBzjA/exec"; // replace with your Apps Script WebApp link
-    let html5QrCode;
-    let currentCameraId = null;
-    let useBackCamera = true;
-    let masterlist = {};
-    let scanned = new Set();
+    // 🔗 Paste your Apps Script Web App URL here:
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw4PwCVszHCvIirwcR7OMVkpTtgsc8ZkmEZcBIPhHB5NZZ3z9BGojpB3VBxM3KHBzjA/exec";
 
-    // Load masterlist from Google Sheets
-    async function loadMasterlist() {
-      const res = await fetch(SCRIPT_URL);
-      masterlist = await res.json();
-      console.log("✅ Loaded master list:", masterlist);
+    let html5QrCode = null;
+    let currentCameraId = null;
+    let preferBack = true;
+
+    let master = {};           // ID -> row object from sheet
+    let sharedScanned = [];    // fetched from ?scanned=true
+
+    // Load master + scanned at startup
+    window.addEventListener('load', async () => {
+      await refreshData();
+      // 🔄 Auto-refresh every 2 seconds
+      setInterval(refreshData, 2000);
+    });
+
+    async function refreshData() {
+      // masterlist
+      const m = await fetch(SCRIPT_URL).then(r => r.json()).catch(() => ({}));
+      if (Object.keys(m).length) master = m;
+
+      // scanned list
+      sharedScanned = await fetch(SCRIPT_URL + "?scanned=true")
+        .then(r => r.json()).catch(() => sharedScanned);
+
+      updateLists();
     }
 
-    // Start scanner
-    async function startScanner() {
-      if (html5QrCode) await html5QrCode.stop();
-      html5QrCode = new Html5Qrcode("reader");
+    function updateLists() {
+      const scannedBox = document.getElementById('scannedList');
+      const pendingBox = document.getElementById('pendingList');
 
-      const devices = await Html5Qrcode.getCameras();
-      if (devices && devices.length) {
-        currentCameraId = useBackCamera && devices[1] ? devices[1].id : devices[0].id;
-        html5QrCode.start(
+      scannedBox.textContent = sharedScanned.length ? sharedScanned.join("\n") : "—";
+
+      const all = Object.keys(master);
+      const pending = all.filter(id => !sharedScanned.includes(id));
+      pendingBox.textContent = pending.length ? pending.join("\n") : "—";
+    }
+
+    function setPill(text) {
+      const el = document.getElementById('statusPill');
+      el.textContent = text;
+    }
+
+    // Start QR scanner (rear by default)
+    async function startScanner() {
+      try {
+        if (!window.Html5Qrcode) {
+          alert("QR library failed to load. Check internet and try again.");
+          return;
+        }
+        if (html5QrCode) await html5QrCode.stop();
+        html5QrCode = new Html5Qrcode("reader");
+
+        const cams = await Html5Qrcode.getCameras(); // needs HTTPS
+        if (!cams || !cams.length) {
+          alert("No camera found or permission denied.");
+          return;
+        }
+        // Try back camera if available
+        currentCameraId = (preferBack && cams.length > 1) ? cams[cams.length - 1].id : cams[0].id;
+
+        await html5QrCode.start(
           currentCameraId,
-          { fps: 10, qrbox: 250 },
-          qrCodeMessage => handleScan(qrCodeMessage),
-          errorMessage => {}
+          { fps: 10, qrbox: 280 },
+          onScanSuccess,
+          /* onScanError */ () => {}
         );
+        setPill("scanning");
+      } catch (err) {
+        console.error(err);
+        alert("Unable to start camera: " + err);
+        setPill("error");
       }
     }
 
-    // Stop scanner
     async function stopScanner() {
       if (html5QrCode) {
-        await html5QrCode.stop();
-        document.getElementById("output").textContent += "\n⏹️ Scanner stopped";
+        try { await html5QrCode.stop(); } catch(_) {}
+        setPill("stopped");
       }
     }
 
-    // Flip camera
-    function flipCamera() {
-      useBackCamera = !useBackCamera;
-      startScanner();
+    async function flipCamera() {
+      try {
+        const cams = await Html5Qrcode.getCameras();
+        if (!cams || cams.length < 2) {
+          alert("No second camera found.");
+          return;
+        }
+        preferBack = !preferBack;
+        await stopScanner();
+        await startScanner();
+      } catch (e) {
+        console.error(e);
+        alert("Flip failed: " + e);
+      }
     }
 
-    // Handle scanned QR
-    async function handleScan(id) {
-      if (scanned.has(id)) return; // Already scanned
-      scanned.add(id);
+    // When a QR is scanned
+    async function onScanSuccess(decodedText) {
+      const id = decodedText.trim();
+      const log = document.getElementById('log');
 
-      if (masterlist[id]) {
-        document.getElementById("output").textContent = `✅ ${id} - ${masterlist[id].NAME} marked present`;
-        // Update Google Sheet
-        fetch(SCRIPT_URL, {
-          method: "POST",
-          body: new URLSearchParams({ id: id })
-        });
+      if (!master[id]) {
+        log.textContent = `❌ Not in masterlist: ${id}`;
+        return;
+      }
+
+      // Save to sheet (shared)
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "scan", id })
+      }).then(r => r.json()).catch(() => ({ ok:false, error:"network" }));
+
+      if (res.ok) {
+        log.textContent =
+          `✅ Marked: ${id}\n` +
+          `Name: ${master[id].NAME || master[id].Name || ""}\n` +
+          `Time saved to Sheet`;
+        // refresh shared lists so everyone sees it
+        await refreshData();
       } else {
-        document.getElementById("output").textContent = `❌ ID ${id} not in masterlist`;
+        log.textContent = `⚠️ Could not save: ${res.error || "unknown error"}`;
       }
     }
 
-    // Show scanned IDs
-    function showScanned() {
-      document.getElementById("output").textContent = "✅ Scanned:\n" + [...scanned].join("\n");
+    async function showScanned() {
+      await refreshData();
+      alert(`Scanned (${sharedScanned.length}):\n\n` + (sharedScanned.join(", ") || "None"));
     }
 
-    // Show pending IDs
-    function showPending() {
-      const pending = Object.keys(masterlist).filter(id => !scanned.has(id));
-      document.getElementById("output").textContent = "⏳ Pending:\n" + pending.join("\n");
+    async function showPending() {
+      await refreshData();
+      const all = Object.keys(master);
+      const pending = all.filter(id => !sharedScanned.includes(id));
+      alert(`Pending (${pending.length}):\n\n` + (pending.join(", ") || "None"));
     }
 
-    // Load masterlist at startup
-    loadMasterlist();
+    async function resetAll() {
+      if (!confirm("This will clear ALL scanned marks for everyone. Are you sure?")) return;
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset" })
+      }).then(r => r.json()).catch(() => ({ ok:false, error:"network" }));
+
+      if (res.ok) {
+        await refreshData();
+        document.getElementById('log').textContent = "🔄 All scans cleared.";
+        alert("All scans cleared.");
+      } else {
+        alert("Reset failed: " + (res.error || "unknown"));
+      }
+    }
   </script>
 </body>
 </html>
-
